@@ -1,0 +1,6 @@
+rq
+sanic
+pymongo
+Sanic-Cors
+redis
+rq

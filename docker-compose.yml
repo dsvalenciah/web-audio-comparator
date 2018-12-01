@@ -1,0 +1,21 @@
+version: "3"
+
+services:
+  web:
+    image: web
+    build: ./web
+    command: python app.py
+    ports:
+      - 80
+    environment:
+      VIRTUAL_HOST: "*/web, */web/*"
+      VIRTUAL_HOST_WEIGHT: 10
+
+  lb:
+    image: dockercloud/haproxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - '80:80'
+    links:
+      - web
