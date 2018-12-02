@@ -1,6 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 import base64
+import json
 import os
 
 from sanic.views import HTTPMethodView
@@ -110,20 +111,43 @@ class Record(HTTPMethodView):
         self.db = db
 
     def get(self, request, _id):
-        with_files = request.raw_args.get('with_files')
-        if with_files == '1':
-            record = self.db.records.find_one({'_id': _id})
-        else:
-            record = self.db.records.find_one(
-                {'_id': _id},
-                {
-                    'files.big_file.base64': 0,
-                    'files.little_file.base64': 0,
-                    'results.distances_overlapping_img': 0,
-                    'results.best_adjust_overlapping_img': 0
-                }
+        error = {}
+        try:
+            include = json.loads(
+                request.raw_args.get('include', '[]')
             )
-        return res.json({'result': record})
+        except json.decoder.JSONDecodeError:
+            include = []
+            error = {
+                'error': (
+                    'The threshold should be a list of allowed values, '
+                    'for example: ["audio", "charts"]'
+                )
+            }
+
+        include_mapper = {
+            'audio': {
+                'files.big_file.base64': 0,
+                'files.little_file.base64': 0
+            },
+            'charts': {
+                'results.distances_overlapping_img': 0,
+                'results.best_adjust_overlapping_img': 0
+            }
+        }
+
+        include_parsed = {}
+        for inc in include:
+            include_parsed.update(include_mapper.get(inc, {}))
+
+        print(include_parsed)
+
+        if include_parsed:
+            record = self.db.records.find_one({'_id': _id}, include_parsed)
+        else:
+            record = self.db.records.find_one({'_id': _id})
+
+        return res.json({'result': record, **error})
 
     def options(self, request, _id):
         return res.json({ })
