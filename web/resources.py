@@ -90,7 +90,7 @@ class RecordCollection(HTTPMethodView):
             process_id,
             big_file.body,
             little_file.body,
-            threshold
+            threshold,
             1
         )
         return res.json({'id': process_id})
