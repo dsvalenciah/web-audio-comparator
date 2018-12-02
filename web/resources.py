@@ -62,7 +62,8 @@ class RecordCollection(HTTPMethodView):
             'enqueued_at': None,
             'finished_at': None,
             'threshold': threshold,
-            'number_of_cores_used': 1, # TODO: get this value from the request
+            # TODO: you can get the following value from the request
+            'number_of_cores_used': 1,
             'advanced': [],
             'files': {
                 'big_file': {
