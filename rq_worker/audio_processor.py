@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import librosa
 import librosa.display
 
+from pydub import AudioSegment
+
 mongo_client = MongoClient((
     'mongodb://dsvalenciah:dsvalenciah07@ds145043.mlab.com:45043'
     '/audio-records'
@@ -18,11 +20,8 @@ mongo_client = MongoClient((
 
 db = mongo_client['audio-records']
 
-sampling_frequency_1 = 48000 # Hertz
-sampling_frequency_2 = 48000 # Hertz
-
 def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
-                    cores):
+                    cores, sampling_data):
     try:
         db.records.update_one(
             {
@@ -45,12 +44,17 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
         with open(little_file_path, 'wb') as little_file:
             little_file.write(little_file_bytes)
 
+        big_file_audio = AudioSegment.from_mp3(big_file_path)
+        little_file_audio = AudioSegment.from_mp3(little_file_path)
+        big_file_sampling_frequency = big_file_audio.frame_rate
+        little_file_sampling_frequency = little_file_audio.frame_rate
+
         # Read audio files and compute spectrogram
-        x_1, sr_1 = librosa.load(big_file_path, sr=sampling_frequency_1)
+        x_1, sr_1 = librosa.load(big_file_path, sr=big_file_sampling_frequency)
         spec_1 = librosa.feature.melspectrogram(y=x_1, sr=sr_1)
         cols_1, rows_1 = spec_1.shape
 
-        x_2, sr_2 = librosa.load(little_file_path, sr=sampling_frequency_2)
+        x_2, sr_2 = librosa.load(little_file_path, sr=little_file_sampling_frequency)
         spec_2 = librosa.feature.melspectrogram(y=x_2, sr=sr_2)
         cols_2, rows_2 = spec_2.shape
 
@@ -60,7 +64,8 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
 
         costs = mp.Manager().dict()
         advanced = mp.Manager().dict()
-        step = 1
+
+        step = int(max(samples_1 * sampling_data, 1))
 
         def distances(indices, costs, core, advanced):
             for i, (index, start_row, end_row) in enumerate(indices):
@@ -70,11 +75,13 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
                 D, wp = librosa.dtw(X=spec_1[:, start_row:end_row], Y=spec_2)
                 cost = D[-1,-1]
                 start_second = (
-                    (start_row * samples_1 / rows_1) / sampling_frequency_1
+                    (
+                        start_row * samples_1 / rows_1
+                    ) / big_file_sampling_frequency
                 )
                 end_second = (
                     end_row * samples_1 / rows_1
-                ) / sampling_frequency_1
+                ) / big_file_sampling_frequency
                 costs[index] = {
                     'cost': cost,
                     'start_row': start_row,
@@ -149,8 +156,8 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
         start_sample = start_min_cost * samples_1 / rows_1
         end_sample = end_min_cost * samples_1 / rows_1
 
-        start_seconds = start_sample / sampling_frequency_1
-        end_seconds = end_sample / sampling_frequency_1
+        start_seconds = start_sample / big_file_sampling_frequency
+        end_seconds = end_sample / big_file_sampling_frequency
 
         left_matrix = np.zeros(int(start_sample))
         right_matrix = np.zeros(int(samples_1 - end_sample))
@@ -162,10 +169,10 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
         # Second plot
         plt.figure(figsize=(16, 4))
         librosa.display.waveplot(
-            x_1, sr=sampling_frequency_1, alpha=0.25, max_points=100
+            x_1, sr=big_file_sampling_frequency, alpha=0.25, max_points=100
         )
         librosa.display.waveplot(
-            x_2_transformed, sr=sampling_frequency_2, color='r', alpha=0.5,
+            x_2_transformed, sr=little_file_sampling_frequency, color='r', alpha=0.5,
             max_points=100
         )
 
@@ -187,11 +194,12 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
             open(best_adjust_overlapping_filename, 'rb').read()
         )
 
-
         results = {
             'finished_at': datetime.now().isoformat(),
             'advanced': advanced.values(),
             'results': {
+                'big_file_sampling_frequency': big_file_sampling_frequency,
+                'little_file_sampling_frequency': little_file_sampling_frequency,
                 'distances_overlapping_img': b64_distances_overlapping_img,
                 'best_adjust_overlapping_img': b64_best_adjust_overlapping_img,
                 'start_second': start_seconds,

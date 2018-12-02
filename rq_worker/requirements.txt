@@ -1,6 +1,7 @@
-redis
+redis==2.10.6
 rq
 
+pydub
 numpy
 matplotlib
 librosa

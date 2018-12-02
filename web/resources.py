@@ -24,7 +24,10 @@ class RecordCollection(HTTPMethodView):
         process_id = str(uuid4())
         big_file = request.files.get('big_file')
         little_file = request.files.get('little_file')
-        threshold = request.form.get('threshold')
+        threshold = request.form.get('threshold', 0.80)
+        sampling_data = request.form.get('sampling_data', 0)
+        cores = request.form.get('cores', 1)
+
         if not big_file or not little_file:
             return res.json(
                 {'error': 'A big_file and a little_file is required'}
@@ -37,19 +40,30 @@ class RecordCollection(HTTPMethodView):
                 {'error': 'Only mp3 files are accepted'}
             )
 
-        if threshold:
-            try:
-                threshold = int(threshold) / 100
-                if threshold < 0.80 or threshold > 0.90:
-                    return res.json(
-                        {'error': 'The threshold should be between 80 and 90'}
-                    )
-            except ValueError:
+        try:
+            threshold = int(threshold) / 100
+            if threshold < 0.80 or threshold > 0.90:
                 return res.json(
-                    {'error': 'The threshold should be a float'}
+                    {'error': 'The threshold should be between 80 and 90'}
                 )
-        else:
-            threshold = 0.80
+        except ValueError:
+            return res.json(
+                {'error': 'The threshold should be a float'}
+            )
+
+        try:
+            sampling_data = float(sampling_data)
+        except ValueError:
+            return res.json(
+                {'error': 'The sampling_data should be a float'}
+            )
+
+        try:
+            cores = int(cores)
+        except ValueError:
+            return res.json(
+                {'error': 'The cores should be a integer'}
+            )
 
         b64_mp3_prefix = b'data:audio/mpeg;base64,'
 
@@ -63,8 +77,8 @@ class RecordCollection(HTTPMethodView):
             'enqueued_at': None,
             'finished_at': None,
             'threshold': threshold,
-            # TODO: you can get the following value from the request
-            'number_of_cores_used': 1,
+            'sampling_data': sampling_data,
+            'number_of_cores_used': cores,
             'advanced': [],
             'files': {
                 'big_file': {
@@ -93,7 +107,8 @@ class RecordCollection(HTTPMethodView):
             big_file.body,
             little_file.body,
             threshold,
-            1
+            cores,
+            sampling_data
         )
         return res.json({'id': process_id})
 
