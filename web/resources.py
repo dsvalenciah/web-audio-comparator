@@ -125,7 +125,9 @@ class Record(HTTPMethodView):
                 )
             }
 
-        include_mapper = {
+        not_include = [x for x in ['audio', 'charts'] if x not in include]
+
+        not_include_mapper = {
             'audio': {
                 'files.big_file.base64': 0,
                 'files.little_file.base64': 0
@@ -136,16 +138,14 @@ class Record(HTTPMethodView):
             }
         }
 
-        include_parsed = {}
-        for inc in include:
-            include_parsed.update(include_mapper.get(inc, {}))
+        not_include_parsed = {}
+        for not_inc in not_include:
+            not_include_parsed.update(not_include_mapper.get(not_inc, {}))
 
-        print(include_parsed)
-
-        if include_parsed:
-            record = self.db.records.find_one({'_id': _id}, include_parsed)
-        else:
+        if not not_include_parsed:
             record = self.db.records.find_one({'_id': _id})
+        else:
+            record = self.db.records.find_one({'_id': _id}, not_include_parsed)
 
         return res.json({'result': record, **error})
 
