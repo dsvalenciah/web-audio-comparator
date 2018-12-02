@@ -23,6 +23,7 @@ class RecordCollection(HTTPMethodView):
         process_id = str(uuid4())
         big_file = request.files.get('big_file')
         little_file = request.files.get('little_file')
+        threshold = request.form.get('threshold')
         if not big_file or not little_file:
             return res.json(
                 {'error': 'A big_file and a little_file is required'}
@@ -35,6 +36,20 @@ class RecordCollection(HTTPMethodView):
                 {'error': 'Only mp3 files are accepted'}
             )
 
+        if threshold:
+            try:
+                threshold = int(threshold) / 100
+                if threshold < 0.80 or threshold > 0.90:
+                    return res.json(
+                        {'error': 'The threshold should be between 80 and 90'}
+                    )
+            except ValueError:
+                return res.json(
+                    {'error': 'The threshold should be a float'}
+                )
+        else:
+            threshold = 0.80
+
         b64_mp3_prefix = b'data:audio/mpeg;base64,'
 
         b64_big_file = b64_mp3_prefix + base64.b64encode(big_file.body)
@@ -46,6 +61,7 @@ class RecordCollection(HTTPMethodView):
             'received_at': datetime.now().isoformat(),
             'enqueued_at': None,
             'finished_at': None,
+            'threshold': threshold,
             'number_of_cores_used': 1, # TODO: get this value from the request
             'advanced': [],
             'files': {
@@ -74,6 +90,7 @@ class RecordCollection(HTTPMethodView):
             process_id,
             big_file.body,
             little_file.body,
+            threshold
             1
         )
         return res.json({'id': process_id})

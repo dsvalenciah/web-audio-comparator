@@ -21,7 +21,8 @@ db = mongo_client['audio-records']
 sampling_frequency_1 = 48000 # Hertz
 sampling_frequency_2 = 48000 # Hertz
 
-def audio_processor(process_id, big_file_bytes, little_file_bytes, cores):
+def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
+                    cores):
     try:
         db.records.update_one(
             {
@@ -133,6 +134,9 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, cores):
 
         # First plot
         plt.plot(start_second_list, costs_list)
+        max_cost = max(costs_list)
+        percentage = max_cost * (1 - treshold)
+        plt.axhline(y=percentage, xmin=0.0, xmax=1.0, color='r')
         plt.title('Overlapping distances')
         distances_overlapping_filename = (
             f'/tmp/{process_id}_distances_overlapping.png'
@@ -157,9 +161,12 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, cores):
 
         # Second plot
         plt.figure(figsize=(16, 4))
-        librosa.display.waveplot(x_1, sr=sampling_frequency_1, alpha=0.25)
         librosa.display.waveplot(
-            x_2_transformed, sr=sampling_frequency_2, color='r', alpha=0.5
+            x_1, sr=sampling_frequency_1, alpha=0.25, max_points=100
+        )
+        librosa.display.waveplot(
+            x_2_transformed, sr=sampling_frequency_2, color='r', alpha=0.5,
+            max_points=100
         )
 
         plt.title('Best adjust of audio overlapping')
