@@ -151,12 +151,12 @@ class App extends Component {
 					</Grid>
 					<Grid item xs={12}>
 					<FormControl>
-          				<InputLabel htmlFor="component-simple">Threshold</InputLabel>
+          				<InputLabel htmlFor="component-simple">Threshold (0.8 to 0.9)</InputLabel>
           				<Input id="component-simple" onChange={this.handleTreshold} />
         			</FormControl>
                     <br />
                     <FormControl>
-                        <InputLabel htmlFor="component-simple2">Sampling data to compare</InputLabel>
+                        <InputLabel htmlFor="component-simple2">Sampling data (0.0 to 1.0)</InputLabel>
                         <Input id="component-simple2" onChange={this.handleSamplingDataChange} />
                     </FormControl>
 					</Grid>
