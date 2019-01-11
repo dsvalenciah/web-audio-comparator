@@ -65,7 +65,7 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
         costs = mp.Manager().dict()
         advanced = mp.Manager().dict()
 
-        step = int(max(samples_2 * sampling_data, 1))
+        step = int(max(rows_2 * sampling_data, 1))
 
         def distances(indices, costs, core, advanced):
             for i, (index, start_row, end_row) in enumerate(indices):
@@ -204,6 +204,7 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
                 'best_adjust_overlapping_img': b64_best_adjust_overlapping_img,
                 'start_second': start_seconds,
                 'end_second': end_seconds,
+                'step_info': {'step': step, 'end': rows_1},
             }
         }
 

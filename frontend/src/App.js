@@ -19,7 +19,8 @@ class App extends Component {
 			bigFile: null,
 			littleFile: null,
 			loading: false,
-			treshold: 0,
+			treshold: null,
+			samplingData: null,
 			completed: 0
 		};
 	}
@@ -46,9 +47,12 @@ class App extends Component {
 			var percentage = parseInt(res.body.result.advanced[0]);
 			if (res.body.result.finished_at) {
 				this.setState({loading: false});
-				base_url = base_url.slice(0,-1) + "1";
-				this.showResults(base_url);
+				this.showResults(base_url.concat("?include=[\"charts\"]"));
 				clearInterval(this.timer);
+			}
+			if (res.body.result.error) {
+				clearInterval(this.timer);
+				// TODO: add error notification
 			}
 		this.setState({
 			completed: percentage
@@ -77,20 +81,29 @@ class App extends Component {
 		this.setState({ treshold: event.target.value });
 	  };
 
+    handleSamplingDataChange = event => {
+        this.setState({ samplingData: event.target.value });
+    };
+
 	handleUpload = () => {
 		if (!this.state.bigFile || !this.state.littleFile) { return; }
-		var base_url = "https://audio-records-app.herokuapp.com/"
+		var base_url = "https://audio-records-app.herokuapp.com/";
 		request
-		.post('https://audio-records-app.herokuapp.com/collection')
-		.attach('big_file', this.state.bigFile)
-		.attach('little_file', this.state.littleFile)
-		.field('threshold', this.state.treshold ? this.state.treshold : "")
-		.then(res => {
-			base_url = base_url.concat(res.body.id, "?include=['charts']");
-			this.timer = setInterval(this.verifyProgress, 500, base_url);
-      this.setState({loading: true});
-      return;
-		})
+			.post('https://audio-records-app.herokuapp.com/collection')
+			.attach('big_file', this.state.bigFile)
+			.attach('little_file', this.state.littleFile)
+			.field('threshold', this.state.treshold || 0.80)
+			.field('sampling_data', this.state.samplingData || 0)
+			.then(res => {
+				if (res.body.id) {
+					base_url = base_url.concat(res.body.id);
+					this.timer = setInterval(this.verifyProgress, 500, base_url);
+						this.setState({loading: true});
+						return;
+					} else {
+						// TODO: show error notification
+					}
+			})
 	}
 
 	render() {
@@ -141,6 +154,11 @@ class App extends Component {
           				<InputLabel htmlFor="component-simple">Threshold</InputLabel>
           				<Input id="component-simple" onChange={this.handleTreshold} />
         			</FormControl>
+                    <br />
+                    <FormControl>
+                        <InputLabel htmlFor="component-simple2">Sampling data to compare</InputLabel>
+                        <Input id="component-simple2" onChange={this.handleSamplingDataChange} />
+                    </FormControl>
 					</Grid>
 					<Button variant="contained" color="primary" onClick={this.handleUpload} disabled={this.state.loading || !this.state.bigFile || !this.state.littleFile} style={{marginRight: "30px"}}>
 						Send
@@ -165,7 +183,7 @@ class App extends Component {
 							/>
 							<TextField
 									id="standard-name"
-									label="Time start of best precision"
+									label="Time end of best precision"
 									value={this.state.resultsApi ? this.state.resultsApi.results.end_second: ""}
 									margin="normal"
 							/>

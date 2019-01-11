@@ -41,10 +41,10 @@ class RecordCollection(HTTPMethodView):
             )
 
         try:
-            threshold = int(threshold) / 100
+            threshold = float(threshold)
             if threshold < 0.80 or threshold > 0.90:
                 return res.json(
-                    {'error': 'The threshold should be between 80 and 90'}
+                    {'error': 'The threshold should be between 0.8 and 0.9'}
                 )
         except ValueError:
             return res.json(
@@ -53,6 +53,10 @@ class RecordCollection(HTTPMethodView):
 
         try:
             sampling_data = float(sampling_data)
+            if sampling_data < 0 or sampling_data > 1:
+                return res.json(
+                    {'error': 'The sampling_data should be between 0 and 0.5'}
+                )
         except ValueError:
             return res.json(
                 {'error': 'The sampling_data should be a float'}
@@ -97,6 +101,7 @@ class RecordCollection(HTTPMethodView):
                 'best_adjust_overlapping_img': None,
                 'start_second': None,
                 'end_second': None,
+                'step_info': None
             },
             'error': None
         }
@@ -135,8 +140,8 @@ class Record(HTTPMethodView):
             include = []
             error = {
                 'error': (
-                    'The threshold should be a list of allowed values, '
-                    'for example: ["audio", "charts"]'
+                    'The include parameter should be a list of allowed values,'
+                    ' for example: ["audio", "charts"]'
                 )
             }
 
@@ -162,7 +167,7 @@ class Record(HTTPMethodView):
         else:
             record = self.db.records.find_one({'_id': _id}, not_include_parsed)
 
-        return res.json({'result': record, **error})
+        return res.json({'result': record, **error, **not_include_parsed})
 
     def options(self, request, _id):
         return res.json({ })
