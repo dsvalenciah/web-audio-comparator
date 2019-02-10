@@ -1,27 +1,24 @@
-from datetime import datetime
-from uuid import uuid4
 import base64
 import json
 import os
-
-from sanic.views import HTTPMethodView
-import sanic.response as res
-
-from bson.json_util import dumps
+from datetime import datetime
+from uuid import uuid4
 
 import redis
+import sanic.response as res
 from rq import Queue
+from rq.job import Job
+from sanic.views import HTTPMethodView
 
-q = Queue(connection=redis.from_url(os.environ.get('REDISCLOUD_URL')))
+
+CONNECTION = redis.from_url(os.environ.get('REDISCLOUD_URL'))
+q = Queue(connection=CONNECTION)
 
 class RecordCollection(HTTPMethodView):
 
-    def __init__(self, db):
-        self.db = db
-
     def post(self, request):
         mp3_mimetypes = ['audio/mpeg', 'audio/mp3']
-        process_id = str(uuid4())
+        job_id = uuid4().hex
         big_file = request.files.get('big_file')
         little_file = request.files.get('little_file')
         threshold = request.form.get('threshold', 0.80)
@@ -69,105 +66,35 @@ class RecordCollection(HTTPMethodView):
                 {'error': 'The cores should be a integer'}
             )
 
-        b64_mp3_prefix = b'data:audio/mpeg;base64,'
-
-        b64_big_file = b64_mp3_prefix + base64.b64encode(big_file.body)
-
-        b64_little_file = b64_mp3_prefix + base64.b64encode(little_file.body)
-
-        record = {
-            '_id': process_id,
-            'received_at': datetime.now().isoformat(),
-            'enqueued_at': None,
-            'finished_at': None,
-            'threshold': threshold,
-            'sampling_data': sampling_data,
-            'number_of_cores_used': cores,
-            'advanced': [],
-            'files': {
-                'big_file': {
-                    'name': big_file.name,
-                    'type': big_file.type,
-                    'base64': b64_big_file
-                },
-                'little_file': {
-                    'name': little_file.name,
-                    'type': little_file.type,
-                    'base64': b64_little_file
-                },
-            },
-            'results': {
-                'distances_overlapping_img': None,
-                'best_adjust_overlapping_img': None,
-                'start_second': None,
-                'end_second': None,
-                'step_info': None
-            },
-            'error': None
-        }
-        self.db.records.insert_one(record)
         q.enqueue(
             'audio_processor.audio_processor',
-            process_id,
             big_file.body,
             little_file.body,
             threshold,
             cores,
-            sampling_data
+            sampling_data,
+            job_id=job_id
         )
-        return res.json({'id': process_id})
-
-    def get(self, request):
-        # return res.json({'data': dumps(self.db.records.find())})
-        # TODO: add pagination to support this feature
-        return res.json({'error': 'this feature is not implemented yet'})
+        return res.json({'id': job_id})
 
     def options(self, request):
         return res.json({ })
 
 class Record(HTTPMethodView):
 
-    def __init__(self, db):
-        self.db = db
+    def get(self, request, job_id):
+        job = Job.fetch(job_id, connection=CONNECTION)
 
-    def get(self, request, _id):
-        error = {}
-        try:
-            include = json.loads(
-                request.raw_args.get('include', '[]')
-            )
-        except json.decoder.JSONDecodeError:
-            include = []
-            error = {
-                'error': (
-                    'The include parameter should be a list of allowed values,'
-                    ' for example: ["audio", "charts"]'
-                )
+        return res.json(
+            {
+                'result': {
+                    **job.meta,
+                    'enqueued_at': job.enqueued_at,
+                    'started_at': job.started_at,
+                    'finished_at': job.ended_at
+                }
             }
-
-        not_include = [x for x in ['audio', 'charts'] if x not in include]
-
-        not_include_mapper = {
-            'audio': {
-                'files.big_file.base64': 0,
-                'files.little_file.base64': 0
-            },
-            'charts': {
-                'results.distances_overlapping_img': 0,
-                'results.best_adjust_overlapping_img': 0
-            }
-        }
-
-        not_include_parsed = {}
-        for not_inc in not_include:
-            not_include_parsed.update(not_include_mapper.get(not_inc, {}))
-
-        if not not_include_parsed:
-            record = self.db.records.find_one({'_id': _id})
-        else:
-            record = self.db.records.find_one({'_id': _id}, not_include_parsed)
-
-        return res.json({'result': record, **error, **not_include_parsed})
+        )
 
     def options(self, request, _id):
         return res.json({ })

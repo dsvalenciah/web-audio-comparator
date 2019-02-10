@@ -47,7 +47,7 @@ class App extends Component {
 			var percentage = parseInt(res.body.result.advanced[0]);
 			if (res.body.result.finished_at) {
 				this.setState({loading: false});
-				this.showResults(base_url.concat("?include=[\"charts\"]"));
+				this.showResults(base_url);
 				clearInterval(this.timer);
 			}
 			if (res.body.result.error) {
@@ -97,7 +97,7 @@ class App extends Component {
 			.then(res => {
 				if (res.body.id) {
 					base_url = base_url.concat(res.body.id);
-					this.timer = setInterval(this.verifyProgress, 500, base_url);
+					this.timer = setInterval(this.verifyProgress, 1000, base_url);
 						this.setState({loading: true});
 						return;
 					} else {
@@ -169,7 +169,7 @@ class App extends Component {
 						{this.state.loading && <LinearProgress variant="determinate" value={this.state.completed} />}
 					</Grid>
 				</Grid>
-				{this.state.resultsApi &&
+				{this.state.resultsApi && this.state.resultsApi.results &&
 					<div>
 						<Grid container spacing={24}
 				  			justify="center"
@@ -178,20 +178,20 @@ class App extends Component {
 							<TextField
 								id="standard-name"
 								label="Time start of best precision"
-								value={this.state.resultsApi ? this.state.resultsApi.results.start_second: ""}
+								value={this.state.resultsApi.results.start_second || ""}
 								margin="normal"
 							/>
 							<TextField
-									id="standard-name"
-									label="Time end of best precision"
-									value={this.state.resultsApi ? this.state.resultsApi.results.end_second: ""}
-									margin="normal"
+								id="standard-name"
+								label="Time end of best precision"
+								value={this.state.resultsApi.results.end_second || ""}
+								margin="normal"
 							/>
 							<Grid item xs={12}>
-								<img alt="" src={this.state.resultsApi.results.distances_overlapping_img} />
+								<img alt="" src={this.state.resultsApi.results.distances_overlapping_img  || ""} />
 							</Grid>
 							<Grid item xs={12}>
-								<img alt="" src={this.state.resultsApi.results.best_adjust_overlapping_img} />
+								<img alt="" src={this.state.resultsApi.results.best_adjust_overlapping_img  || ""} />
 							</Grid>
 						</Grid>
 					</div>
