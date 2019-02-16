@@ -7,11 +7,11 @@ import librosa
 import librosa.display
 import matplotlib.pyplot as plt
 import numpy as np
-from pydub import AudioSegment
 from rq import get_current_job
 
 
-def audio_processor(big_file_bytes, little_file_bytes, treshold, cores, sampling_data):
+def audio_processor(big_file_bytes, little_file_bytes, threshold_line,
+                    threads_count, comparision_rate, apply_normalization):
     job = get_current_job()
     job_id = job.id
     try:
@@ -25,17 +25,12 @@ def audio_processor(big_file_bytes, little_file_bytes, treshold, cores, sampling
         with open(little_file_path, 'wb') as little_file:
             little_file.write(little_file_bytes)
 
-        big_file_audio = AudioSegment.from_mp3(big_file_path)
-        little_file_audio = AudioSegment.from_mp3(little_file_path)
-        big_file_sampling_frequency = big_file_audio.frame_rate
-        little_file_sampling_frequency = little_file_audio.frame_rate
-
         # Read audio files and compute spectrogram
-        x_1, sr_1 = librosa.load(big_file_path, sr=big_file_sampling_frequency)
+        x_1, sr_1 = librosa.load(big_file_path, sr=None)
         spec_1 = librosa.feature.melspectrogram(y=x_1, sr=sr_1)
         _, rows_1 = spec_1.shape
 
-        x_2, sr_2 = librosa.load(little_file_path, sr=little_file_sampling_frequency)
+        x_2, sr_2 = librosa.load(little_file_path, sr=None)
         spec_2 = librosa.feature.melspectrogram(y=x_2, sr=sr_2)
         _, rows_2 = spec_2.shape
 
@@ -46,7 +41,7 @@ def audio_processor(big_file_bytes, little_file_bytes, treshold, cores, sampling
         costs = mp.Manager().dict()
         advanced = mp.Manager().dict()
 
-        step = int(max(rows_2 * sampling_data, 1))
+        step = int(max(rows_2 * comparision_rate, 1))
 
         def distances(indices, costs, core, advanced):
             for i, (index, start_row, end_row) in enumerate(indices):
@@ -58,11 +53,11 @@ def audio_processor(big_file_bytes, little_file_bytes, treshold, cores, sampling
                 start_second = (
                     (
                         start_row * samples_1 / rows_1
-                    ) / big_file_sampling_frequency
+                    ) / sr_1
                 )
                 end_second = (
                     end_row * samples_1 / rows_1
-                ) / big_file_sampling_frequency
+                ) / sr_1
                 costs[index] = {
                     'cost': cost,
                     'start_row': start_row,
@@ -76,7 +71,7 @@ def audio_processor(big_file_bytes, little_file_bytes, treshold, cores, sampling
             for i, j in enumerate(range(0, rows_1, step))
         ])
 
-        list_indices = np.array_split(indices, cores)
+        list_indices = np.array_split(indices, threads_count)
 
         workers = [
             mp.Process(
@@ -86,6 +81,7 @@ def audio_processor(big_file_bytes, little_file_bytes, treshold, cores, sampling
             for core, indices in enumerate(list_indices)
         ]
 
+        time_start_process = datetime.utcnow()
         for worker in workers:
             worker.start()
 
@@ -93,6 +89,9 @@ def audio_processor(big_file_bytes, little_file_bytes, treshold, cores, sampling
             job.meta["advanced"] = advanced.values()
             job.save_meta()
             sleep(0.1)
+        total_time_process = (
+            datetime.utcnow() - time_start_process
+        ).total_seconds()
 
         transformed_costs = {}
         cost_indices = range(max(costs.keys()))
@@ -112,9 +111,12 @@ def audio_processor(big_file_bytes, little_file_bytes, treshold, cores, sampling
         ]
 
         # First plot
+        if apply_normalization:
+            max_cost = max(costs_list)
+            costs_list = [cl / max_cost for cl in costs_list]
+
+        percentage = 1 - threshold_line
         plt.plot(start_second_list, costs_list)
-        max_cost = max(costs_list)
-        percentage = max_cost * (1 - treshold)
         plt.axhline(y=percentage, xmin=0.0, xmax=1.0, color='r')
         plt.title('Overlapping distances')
         distances_overlapping_filename = (
@@ -128,8 +130,8 @@ def audio_processor(big_file_bytes, little_file_bytes, treshold, cores, sampling
         start_sample = start_min_cost * samples_1 / rows_1
         end_sample = end_min_cost * samples_1 / rows_1
 
-        start_seconds = start_sample / big_file_sampling_frequency
-        end_seconds = end_sample / big_file_sampling_frequency
+        start_seconds = start_sample / sr_1
+        end_seconds = end_sample / sr_1
 
         left_matrix = np.zeros(int(start_sample))
         right_matrix = np.zeros(int(samples_1 - end_sample))
@@ -141,10 +143,10 @@ def audio_processor(big_file_bytes, little_file_bytes, treshold, cores, sampling
         # Second plot
         plt.figure(figsize=(16, 4))
         librosa.display.waveplot(
-            x_1, sr=big_file_sampling_frequency, alpha=0.25, max_points=100
+            x_1, sr=sr_1, alpha=0.25, max_points=100
         )
         librosa.display.waveplot(
-            x_2_transformed, sr=little_file_sampling_frequency, color='r', alpha=0.5,
+            x_2_transformed, sr=sr_2, color='r', alpha=0.5,
             max_points=100
         )
 
@@ -169,12 +171,13 @@ def audio_processor(big_file_bytes, little_file_bytes, treshold, cores, sampling
         results = {
             'advanced': advanced.values(),
             'results': {
-                'big_file_sampling_frequency': big_file_sampling_frequency,
-                'little_file_sampling_frequency': little_file_sampling_frequency,
+                'big_file_sampling_frequency': sr_1,
+                'little_file_sampling_frequency': sr_2,
                 'distances_overlapping_img': b64_distances_overlapping_img,
                 'best_adjust_overlapping_img': b64_best_adjust_overlapping_img,
                 'start_second': start_seconds,
                 'end_second': end_seconds,
+                'process_duration': total_time_process,
                 'step_info': {'step': step, 'end': rows_1},
             }
         }

@@ -1,6 +1,5 @@
 redis
 rq
-pydub
 numpy
 matplotlib
 librosa

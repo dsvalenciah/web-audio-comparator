@@ -21,9 +21,10 @@ class RecordCollection(HTTPMethodView):
         job_id = uuid4().hex
         big_file = request.files.get('big_file')
         little_file = request.files.get('little_file')
-        threshold = request.form.get('threshold', 0.80)
-        sampling_data = request.form.get('sampling_data', 0)
-        cores = request.form.get('cores', 1)
+        threshold_line = request.form.get('threshold_line', 0.80)
+        comparision_rate = request.form.get('comparision_rate', 0)
+        threads_count = request.form.get('threads_count', 1)
+        apply_normalization = request.form.get('apply_normalization', False)
 
         if not big_file or not little_file:
             return res.json(
@@ -38,41 +39,49 @@ class RecordCollection(HTTPMethodView):
             )
 
         try:
-            threshold = float(threshold)
-            if threshold < 0.80 or threshold > 0.90:
+            threshold_line = float(threshold_line)
+            if threshold_line < 0.80 or threshold_line > 0.90:
                 return res.json(
-                    {'error': 'The threshold should be between 0.8 and 0.9'}
+                    {'error': 'The threshold_line should be between 0.8 and 0.9'}
                 )
         except ValueError:
             return res.json(
-                {'error': 'The threshold should be a float'}
+                {'error': 'The threshold_line should be a float'}
             )
 
         try:
-            sampling_data = float(sampling_data)
-            if sampling_data < 0 or sampling_data > 1:
+            comparision_rate = float(comparision_rate)
+            if comparision_rate < 0 or comparision_rate > 1:
                 return res.json(
-                    {'error': 'The sampling_data should be between 0 and 0.5'}
+                    {'error': 'The comparision_rate should be between 0 and 0.5'}
                 )
         except ValueError:
             return res.json(
-                {'error': 'The sampling_data should be a float'}
+                {'error': 'The comparision_rate should be a float'}
             )
 
         try:
-            cores = int(cores)
+            threads_count = int(threads_count)
         except ValueError:
             return res.json(
-                {'error': 'The cores should be a integer'}
+                {'error': 'The threads_count should be a integer'}
             )
+        
+        if apply_normalization not in ['false', 'true']:
+            return res.json(
+                {'error': 'apply_normalization must be `false` or `true`'}
+            )
+        else:
+            apply_normalization = apply_normalization == 'true'
 
         q.enqueue(
             'audio_processor.audio_processor',
             big_file.body,
             little_file.body,
-            threshold,
-            cores,
-            sampling_data,
+            threshold_line,
+            threads_count,
+            comparision_rate,
+            apply_normalization,
             job_id=job_id
         )
         return res.json({'id': job_id})

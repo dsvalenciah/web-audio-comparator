@@ -9,6 +9,9 @@ import TextField from '@material-ui/core/TextField';
 import FormControl from '@material-ui/core/FormControl';
 import Input from '@material-ui/core/Input';
 import InputLabel from '@material-ui/core/InputLabel';
+import MenuItem from '@material-ui/core/MenuItem';
+import Select from '@material-ui/core/Select';
+
 
 
 class App extends Component {
@@ -19,9 +22,11 @@ class App extends Component {
 			bigFile: null,
 			littleFile: null,
 			loading: false,
-			treshold: null,
-			samplingData: null,
-			completed: 0
+			thresholdLine: null,
+			comparisionRate: null,
+			completed: 0,
+			threadsCount: '',
+			applyNormalization: ''
 		};
 	}
 
@@ -44,7 +49,6 @@ class App extends Component {
 		.get(base_url)
 		.set('Accept', 'application/json')
 		.then(res => {
-			var percentage = parseInt(res.body.result.advanced[0]);
 			if (res.body.result.finished_at) {
 				this.setState({loading: false});
 				this.showResults(base_url);
@@ -54,9 +58,12 @@ class App extends Component {
 				clearInterval(this.timer);
 				// TODO: add error notification
 			}
-		this.setState({
-			completed: percentage
-		});
+			if (res.body.result.advanced && res.body.result.advanced.length) {
+				var percentage = parseInt(res.body.result.advanced[0]);
+				this.setState({
+					completed: percentage
+				});
+			}
 		})
 		.catch(err => {
 			console.log(err);
@@ -77,13 +84,21 @@ class App extends Component {
 		})
 	}
 
-	handleTreshold = event => {
-		this.setState({ treshold: event.target.value });
-	  };
+	handleTresholdLineChange = event => {
+		this.setState({ thresholdLine: event.target.value });
+	};
 
-    handleSamplingDataChange = event => {
-        this.setState({ samplingData: event.target.value });
-    };
+	handleComparisionRateChange = event => {
+		this.setState({ comparisionRate: event.target.value });
+	};
+
+	handleThreadsCountChange = event => {
+		this.setState({ threadsCount: event.target.value });
+	};
+
+	handleApplyNormalizationChange = event => {
+		this.setState({ applyNormalization: event.target.value });
+	}
 
 	handleUpload = () => {
 		if (!this.state.bigFile || !this.state.littleFile) { return; }
@@ -92,12 +107,14 @@ class App extends Component {
 			.post('https://audio-records-app.herokuapp.com/collection')
 			.attach('big_file', this.state.bigFile)
 			.attach('little_file', this.state.littleFile)
-			.field('threshold', this.state.treshold || 0.80)
-			.field('sampling_data', this.state.samplingData || 0)
+			.field('threshold_line', this.state.thresholdLine || 0.80)
+			.field('comparision_rate', this.state.comparisionRate || 0)
+			.field('threads_count', this.state.threadsCount || 1)
+			.field('apply_normalization', this.state.applyNormalization || false)
 			.then(res => {
 				if (res.body.id) {
 					base_url = base_url.concat(res.body.id);
-					this.timer = setInterval(this.verifyProgress, 1000, base_url);
+					this.timer = setInterval(this.verifyProgress, 1500, base_url);
 						this.setState({loading: true});
 						return;
 					} else {
@@ -115,7 +132,7 @@ class App extends Component {
 				>
 					<Grid item xs={6}>
 						<input
-							accept="audio/*"
+							accept="audio/mp3"
 							id="contained-big-file"
 							type="file"
 							style={{display: 'none' }}
@@ -133,7 +150,7 @@ class App extends Component {
 					</Grid>
 					<Grid item xs={6}>
 						<input
-							accept="audio/*"
+							accept="audio/mp3"
 							id="contained-little-file"
 							type="file"
 							style={{display: 'none' }}
@@ -150,20 +167,58 @@ class App extends Component {
 						</label>
 					</Grid>
 					<Grid item xs={12}>
-					<FormControl>
-          				<InputLabel htmlFor="component-simple">Threshold (0.8 to 0.9)</InputLabel>
-          				<Input id="component-simple" onChange={this.handleTreshold} />
-        			</FormControl>
-                    <br />
-                    <FormControl>
-                        <InputLabel htmlFor="component-simple2">Sampling data (0.0 to 1.0)</InputLabel>
-                        <Input id="component-simple2" onChange={this.handleSamplingDataChange} />
-                    </FormControl>
+						<FormControl style={{minWidth: 300}}>
+							<InputLabel htmlFor="component-simple">Threshold line position (0.8 to 0.9)</InputLabel>
+							<Input id="component-simple" onChange={this.handleTresholdLineChange} />
+						</FormControl>
+						<br />
+						<FormControl style={{minWidth: 300}}>
+							<InputLabel htmlFor="component-simple2">Comparision rate (0.0 to 1.0)</InputLabel>
+							<Input id="component-simple2" onChange={this.handleComparisionRateChange} />
+						</FormControl>
+						<br />
+						<FormControl style={{minWidth: 300}}>
+							<InputLabel htmlFor="threads-count">Threads count (1 to 4)</InputLabel>
+							<Select
+								value={this.state.threadsCount}
+								onChange={this.handleThreadsCountChange}
+								inputProps={{
+									name: 'threadsCount',
+									id: 'threads-count',
+								}}
+							>
+								<MenuItem value={1}>1</MenuItem>
+								<MenuItem value={2}>2</MenuItem>
+								<MenuItem value={3}>3</MenuItem>
+								<MenuItem value={4}>4</MenuItem>
+							</Select>
+						</FormControl>
+						<br />
+						<FormControl style={{minWidth: 300}}>
+							<InputLabel htmlFor="apply-normalization">Apply normalization to results</InputLabel>
+							<Select
+								value={this.state.applyNormalization}
+								onChange={this.handleApplyNormalizationChange}
+								inputProps={{
+									name: 'applyNormalization',
+									id: 'apply-normalization',
+								}}
+							>
+								<MenuItem value={true}>Yes</MenuItem>
+								<MenuItem value={false}>no</MenuItem>
+							</Select>
+						</FormControl>
 					</Grid>
-					<Button variant="contained" color="primary" onClick={this.handleUpload} disabled={this.state.loading || !this.state.bigFile || !this.state.littleFile} style={{marginRight: "30px"}}>
-						Send
-        				<Send />
-      				</Button>
+					<Button
+						variant="contained"
+						color="primary"
+						onClick={this.handleUpload}
+						disabled={this.state.loading || !this.state.bigFile || !this.state.littleFile}
+						style={{marginRight: "30px"}}
+					>
+						Start process
+        		<Send />
+      		</Button>
 					{this.state.loading && <CircularProgress size={24} color="secondary"/>}
 					<Grid item xs={12}>
 						{this.state.loading && <LinearProgress variant="determinate" value={this.state.completed} />}
@@ -172,8 +227,8 @@ class App extends Component {
 				{this.state.resultsApi && this.state.resultsApi.results &&
 					<div>
 						<Grid container spacing={24}
-				  			justify="center"
-				  			alignItems="center"
+							justify="center"
+							alignItems="center"
 						>
 							<TextField
 								id="standard-name"
@@ -185,6 +240,12 @@ class App extends Component {
 								id="standard-name"
 								label="Time end of best precision"
 								value={this.state.resultsApi.results.end_second || ""}
+								margin="normal"
+							/>
+							<TextField
+								id="standard-name"
+								label="Process duration"
+								value={this.state.resultsApi.results.process_duration || ""}
 								margin="normal"
 							/>
 							<Grid item xs={12}>
