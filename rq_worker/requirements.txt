@@ -1,8 +1,5 @@
-redis==2.10.6
+redis
 rq
-
-pydub
 numpy
 matplotlib
 librosa
-pymongo

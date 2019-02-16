@@ -1,42 +1,23 @@
-from datetime import datetime
-import multiprocessing as mp
-from time import sleep
 import base64
-
-from pymongo import MongoClient
-
-import numpy as np
-import matplotlib.pyplot as plt
+import multiprocessing as mp
+from datetime import datetime
+from time import sleep
 
 import librosa
 import librosa.display
+import matplotlib.pyplot as plt
+import numpy as np
+from rq import get_current_job
 
-from pydub import AudioSegment
 
-mongo_client = MongoClient((
-    'mongodb://dsvalenciah:dsvalenciah07@ds145043.mlab.com:45043'
-    '/audio-records'
-))
-
-db = mongo_client['audio-records']
-
-def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
-                    cores, sampling_data):
+def audio_processor(big_file_bytes, little_file_bytes, threshold_line,
+                    threads_count, comparision_rate, apply_normalization):
+    job = get_current_job()
+    job_id = job.id
     try:
-        db.records.update_one(
-            {
-                '_id': process_id
-            },
-            {
-                "$set": {
-                    'enqueued_at': datetime.now().isoformat()
-                }
-            },
-            upsert=False
-        )
-        big_file_path = (f'/tmp/{process_id}_big_file.mp3')
+        big_file_path = (f'/tmp/{job_id}_big_file.mp3')
 
-        little_file_path = (f'/tmp/{process_id}_little_file.mp3')
+        little_file_path = (f'/tmp/{job_id}_little_file.mp3')
 
         with open(big_file_path, 'wb') as big_file:
             big_file.write(big_file_bytes)
@@ -44,44 +25,39 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
         with open(little_file_path, 'wb') as little_file:
             little_file.write(little_file_bytes)
 
-        big_file_audio = AudioSegment.from_mp3(big_file_path)
-        little_file_audio = AudioSegment.from_mp3(little_file_path)
-        big_file_sampling_frequency = big_file_audio.frame_rate
-        little_file_sampling_frequency = little_file_audio.frame_rate
-
         # Read audio files and compute spectrogram
-        x_1, sr_1 = librosa.load(big_file_path, sr=big_file_sampling_frequency)
+        x_1, sr_1 = librosa.load(big_file_path, sr=None)
         spec_1 = librosa.feature.melspectrogram(y=x_1, sr=sr_1)
-        cols_1, rows_1 = spec_1.shape
+        _, rows_1 = spec_1.shape
 
-        x_2, sr_2 = librosa.load(little_file_path, sr=little_file_sampling_frequency)
+        x_2, sr_2 = librosa.load(little_file_path, sr=None)
         spec_2 = librosa.feature.melspectrogram(y=x_2, sr=sr_2)
-        cols_2, rows_2 = spec_2.shape
+        _, rows_2 = spec_2.shape
 
         # Compute dtw with glide and find the minimum accuracy
         samples_1 = x_1.shape[0]
-        samples_2 = x_2.shape[0]
+        # samples_2 = x_2.shape[0]
 
         costs = mp.Manager().dict()
         advanced = mp.Manager().dict()
 
-        step = int(max(rows_2 * sampling_data, 1))
+        step = int(max(rows_2 * comparision_rate, 1))
 
         def distances(indices, costs, core, advanced):
             for i, (index, start_row, end_row) in enumerate(indices):
                 advanced[core] = (
                     "{}%".format(int((i + 1) / len(indices) * 100))
                 )
-                D, wp = librosa.dtw(X=spec_1[:, start_row:end_row], Y=spec_2)
+                D, _ = librosa.dtw(X=spec_1[:, start_row:end_row], Y=spec_2)
                 cost = D[-1,-1]
                 start_second = (
                     (
                         start_row * samples_1 / rows_1
-                    ) / big_file_sampling_frequency
+                    ) / sr_1
                 )
                 end_second = (
                     end_row * samples_1 / rows_1
-                ) / big_file_sampling_frequency
+                ) / sr_1
                 costs[index] = {
                     'cost': cost,
                     'start_row': start_row,
@@ -95,7 +71,7 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
             for i, j in enumerate(range(0, rows_1, step))
         ])
 
-        list_indices = np.array_split(indices, cores)
+        list_indices = np.array_split(indices, threads_count)
 
         workers = [
             mp.Process(
@@ -105,22 +81,17 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
             for core, indices in enumerate(list_indices)
         ]
 
+        time_start_process = datetime.utcnow()
         for worker in workers:
             worker.start()
 
         while True in [x.is_alive() for x in workers]:
-            db.records.update_one(
-                {
-                    '_id': process_id
-                },
-                {
-                    "$set": {
-                        'advanced': advanced.values()
-                    }
-                },
-                upsert=False
-            )
+            job.meta["advanced"] = advanced.values()
+            job.save_meta()
             sleep(0.1)
+        total_time_process = (
+            datetime.utcnow() - time_start_process
+        ).total_seconds()
 
         transformed_costs = {}
         cost_indices = range(max(costs.keys()))
@@ -140,13 +111,16 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
         ]
 
         # First plot
+        if apply_normalization:
+            max_cost = max(costs_list)
+            costs_list = [cl / max_cost for cl in costs_list]
+
+        percentage = 1 - threshold_line
         plt.plot(start_second_list, costs_list)
-        max_cost = max(costs_list)
-        percentage = max_cost * (1 - treshold)
         plt.axhline(y=percentage, xmin=0.0, xmax=1.0, color='r')
         plt.title('Overlapping distances')
         distances_overlapping_filename = (
-            f'/tmp/{process_id}_distances_overlapping.png'
+            f'/tmp/{job_id}_distances_overlapping.png'
         )
         plt.savefig(distances_overlapping_filename, format='png')
 
@@ -156,8 +130,8 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
         start_sample = start_min_cost * samples_1 / rows_1
         end_sample = end_min_cost * samples_1 / rows_1
 
-        start_seconds = start_sample / big_file_sampling_frequency
-        end_seconds = end_sample / big_file_sampling_frequency
+        start_seconds = start_sample / sr_1
+        end_seconds = end_sample / sr_1
 
         left_matrix = np.zeros(int(start_sample))
         right_matrix = np.zeros(int(samples_1 - end_sample))
@@ -169,17 +143,17 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
         # Second plot
         plt.figure(figsize=(16, 4))
         librosa.display.waveplot(
-            x_1, sr=big_file_sampling_frequency, alpha=0.25, max_points=100
+            x_1, sr=sr_1, alpha=0.25, max_points=100
         )
         librosa.display.waveplot(
-            x_2_transformed, sr=little_file_sampling_frequency, color='r', alpha=0.5,
+            x_2_transformed, sr=sr_2, color='r', alpha=0.5,
             max_points=100
         )
 
         plt.title('Best adjust of audio overlapping')
         plt.tight_layout()
         best_adjust_overlapping_filename = (
-            f'/tmp/{process_id}_best_adjust_overlapping.png'
+            f'/tmp/{job_id}_best_adjust_overlapping.png'
         )
         plt.savefig(best_adjust_overlapping_filename, format='png')
 
@@ -195,37 +169,21 @@ def audio_processor(process_id, big_file_bytes, little_file_bytes, treshold,
         )
 
         results = {
-            'finished_at': datetime.now().isoformat(),
             'advanced': advanced.values(),
             'results': {
-                'big_file_sampling_frequency': big_file_sampling_frequency,
-                'little_file_sampling_frequency': little_file_sampling_frequency,
+                'big_file_sampling_frequency': sr_1,
+                'little_file_sampling_frequency': sr_2,
                 'distances_overlapping_img': b64_distances_overlapping_img,
                 'best_adjust_overlapping_img': b64_best_adjust_overlapping_img,
                 'start_second': start_seconds,
                 'end_second': end_seconds,
+                'process_duration': total_time_process,
                 'step_info': {'step': step, 'end': rows_1},
             }
         }
 
-        db.records.update_one(
-            {
-                '_id': process_id
-            },
-            {
-                "$set": results
-            },
-            upsert=False
-        )
+        job.meta = {**job.meta, **results}
+        job.save_meta()
     except Exception as e:
-        db.records.update_one(
-            {
-                '_id': process_id
-            },
-            {
-                "$set": {
-                    'error': str(e)
-                }
-            },
-            upsert=False
-        )
+        job.meta = {**job.meta, 'error': str(e)}
+        job.save_meta()
