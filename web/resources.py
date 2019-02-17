@@ -10,8 +10,13 @@ from rq import Queue
 from rq.job import Job
 from sanic.views import HTTPMethodView
 
+REDIS_HOST = os.environ.get('REDIS_HOST')
+REDIS_PORT = os.environ.get('REDIS_PORT')
+REDIS_PASSWORD = os.environ.get('REDIS_PASSWORD')
 
-CONNECTION = redis.from_url(os.environ.get('REDISCLOUD_URL'))
+CONNECTION = redis.Redis(
+    host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD
+)
 q = Queue(connection=CONNECTION)
 
 class RecordCollection(HTTPMethodView):
@@ -82,7 +87,8 @@ class RecordCollection(HTTPMethodView):
             threads_count,
             comparision_rate,
             apply_normalization,
-            job_id=job_id
+            job_id=job_id,
+            result_ttl=30
         )
         return res.json({'id': job_id})
 
