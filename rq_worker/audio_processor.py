@@ -111,11 +111,12 @@ def audio_processor(big_file_bytes, little_file_bytes, threshold_line,
         ]
 
         # First plot
+        max_cost = max(costs_list)
+        percentage = max_cost * (1 - threshold_line)
         if apply_normalization:
-            max_cost = max(costs_list)
             costs_list = [cl / max_cost for cl in costs_list]
+            percentage = 1 - threshold_line
 
-        percentage = 1 - threshold_line
         plt.plot(start_second_list, costs_list)
         plt.axhline(y=percentage, xmin=0.0, xmax=1.0, color='r')
         plt.title('Overlapping distances')
