@@ -180,6 +180,7 @@ def audio_processor(big_file_bytes, little_file_bytes, threshold_line,
                 'end_second': end_seconds,
                 'process_duration': total_time_process,
                 'step_info': {'step': step, 'end': rows_1},
+                'finished': True
             }
         }
 

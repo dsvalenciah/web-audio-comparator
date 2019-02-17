@@ -49,7 +49,7 @@ class App extends Component {
 		.get(base_url)
 		.set('Accept', 'application/json')
 		.then(res => {
-			if (res.body.result.finished_at) {
+			if (res.body.result.results && res.body.result.results.finished) {
 				this.setState({loading: false});
 				this.showResults(base_url);
 				clearInterval(this.timer);
